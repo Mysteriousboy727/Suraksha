@@ -1,69 +1,103 @@
 # 🛡️ Suraksha — OT Network Intrusion Detection System
 
-> Suraksha means Protection in Sanskrit.  
-A lightweight passive IDS for OT/ICS networks monitoring Modbus TCP, OPC-UA, and DNP3 using behavioral ML — without sending a single packet to the OT network.
-
-![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-Python-009688?logo=fastapi&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-TimescaleDB-FDB515?logo=postgresql&logoColor=white)
-![Redis](https://img.shields.io/badge/Redis-Streams-DC382D?logo=redis&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-green)
+Suraksha is a lightweight passive Intrusion Detection System for OT/ICS networks.  
+It monitors Modbus TCP, OPC-UA, and DNP3 traffic using behavioral ML without sending any packet to the OT network.
 
 ---
 
-## 📌 The Problem
+## 🚨 Problem
 
-OT networks still use legacy protocols with:
-
-- No authentication  
-- No encryption  
-- Minimal logging  
-
-| Issue | Existing Tools | Suraksha |
-|---|---|---|
-| Protocol awareness | Generic TCP only | FC-level decode |
-| Detection | Static signatures | Behavioral ML |
-| Scanning risk | Active probing | Passive SPAN |
-| Alerts | Generic | Plain-English + fix |
+Industrial networks use outdated protocols without authentication or encryption.  
+Attackers can send malicious commands directly to PLCs and disrupt operations.
 
 ---
 
-## 🧠 System Architecture
+## 🎯 Solution
 
-### Full Stack Flowchart
+Suraksha passively monitors traffic, detects anomalies using ML, and visualizes threats via a real-time dashboard.
+
+---
+
+## 🏗️ System Architecture
 
 ```mermaid
 flowchart TD
-PLC[PLC / RTU] --> SPAN[SPAN Mirror Port]
-SCADA[SCADA] --> SPAN
-HMI[HMI] --> SPAN
-SENSOR[Sensors] --> SPAN
 
-SPAN --> SCAPY[Scapy Sniffer]
+A[OT Devices PLC SCADA HMI Sensors]
+B[SPAN Port Mirror]
+C[Packet Capture Engine Scapy]
+D[Protocol Parsers Modbus OPCUA DNP3]
+E[Redis Streams Message Bus]
+F[ML Engine Isolation Forest LSTM]
+G[FastAPI Backend]
+H[TimescaleDB Database]
+I[React Dashboard]
 
-SCAPY --> MODBUS[Modbus Decoder]
-SCAPY --> OPCUA[OPC-UA Parser]
-SCAPY --> DNP3[DNP3 Decoder]
+A --> B
+B --> C
+C --> D
+D --> E
+E --> F
+F --> G
+G --> H
+G --> I
+```
 
-MODBUS --> REDIS
-OPCUA --> REDIS
-DNP3 --> REDIS
+---
 
-REDIS --> ML[ML Engine]
+## ⚙️ Tech Stack
 
-ML --> API[FastAPI Backend]
-API --> DB[(TimescaleDB)]
-API --> UI[React Dashboard]
-sequenceDiagram
-participant OT as OT Network
-participant CAP as Capture Engine
-participant ML as ML Engine
-participant API as FastAPI
-participant UI as Dashboard
+### Frontend
 
-OT->>CAP: SPAN mirrored packets
-CAP->>CAP: Decode Modbus/OPC-UA/DNP3
-CAP->>ML: Send structured events
-ML->>API: Send anomalies
-API->>UI: WebSocket alerts
-UI->>UI: Visualize
+| Tech | Why Used |
+|------|---------|
+| React | Real-time dashboard UI |
+| Vite | Fast build system |
+| D3.js | Topology visualization |
+| Recharts | Charts |
+| Tailwind | Styling |
+
+---
+
+### Backend
+
+| Tech | Why Used |
+|------|---------|
+| FastAPI | Async backend |
+| Scapy | Packet capture |
+| Redis | Streaming pipeline |
+
+---
+
+### Database
+
+| Tech | Why Used |
+|------|---------|
+| TimescaleDB | Time-series storage |
+
+---
+
+### ML Models
+
+| Model | Purpose |
+|-------|--------|
+| Isolation Forest | Point anomaly detection |
+| LSTM Autoencoder | Sequence anomaly detection |
+
+---
+
+## 🚀 Getting Started
+
+### Frontend
+```
+npm install
+npm run dev
+```
+
+### Backend
+```
+pip install fastapi uvicorn scapy redis sklearn torch
+uvicorn main:app --reload
+```
+
+---
