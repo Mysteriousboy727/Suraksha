@@ -1,451 +1,69 @@
-# Suraksha - OT Network Intrusion Detection System
+# 🛡️ Suraksha — OT Network Intrusion Detection System
 
-> **Suraksha** (Sanskrit: Protection) is a lightweight, passive Intrusion Detection System built specifically for Operational Technology (OT) / Industrial Control System (ICS) networks. It monitors industrial protocols like Modbus TCP, OPC-UA, and DNP3 in real-time, detects unauthorized devices and abnormal commands using behavioral ML, and visualizes threats on a live dashboard without ever sending a single packet to the OT network.
+> Suraksha means Protection in Sanskrit.  
+A lightweight passive IDS for OT/ICS networks monitoring Modbus TCP, OPC-UA, and DNP3 using behavioral ML — without sending a single packet to the OT network.
 
-[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev)
-[![Vite](https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white)](https://vitejs.dev)
-[![FastAPI](https://img.shields.io/badge/FastAPI-Python-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![TimescaleDB](https://img.shields.io/badge/TimescaleDB-PostgreSQL-FDB515?logo=postgresql&logoColor=white)](https://www.timescale.com)
-[![Redis](https://img.shields.io/badge/Redis-Streams-DC382D?logo=redis&logoColor=white)](https://redis.io)
-[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
-
----
-
-## Table of Contents
-
-- [The Problem](#the-problem)
-- [System Architecture](#system-architecture)
-- [Tech Stack](#tech-stack)
-- [ML Models](#ml-models)
-- [API Reference](#api-reference)
-- [Dashboard Features](#dashboard-features)
-- [Getting Started](#getting-started)
-- [Project Structure](#project-structure)
-- [Graphical Analysis](#graphical-analysis)
-- [Security Design Principles](#security-design-principles)
-- [References](#references)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-Python-009688?logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-TimescaleDB-FDB515?logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-Streams-DC382D?logo=redis&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
 
-## The Problem
+## 📌 The Problem
 
-OT networks power factories, power plants, water treatment facilities, and manufacturing floors. They run industrial protocols designed in the 1970s-90s with zero authentication, zero encryption, and zero access control. Any device on the network can issue commands to any PLC.
+OT networks still use legacy protocols with:
 
-**What existing tools get wrong:**
+- No authentication  
+- No encryption  
+- Minimal logging  
 
 | Issue | Existing Tools | Suraksha |
 |---|---|---|
-| Protocol awareness | Generic TCP analysis | FC-level Modbus and OPC-UA decode |
-| Active scanning | Send probe packets that crash PLCs | 100% passive SPAN port only |
-| Detection method | Static signatures only | Behavioral ML per device |
-| Alert context | Anomaly detected | Plain English plus physical risk plus fix |
-| Cost | $500K+/year Claroty, Dragos | Open source, self-hosted |
-| ML explainability | Black box score | SHAP feature breakdown per alert |
+| Protocol awareness | Generic TCP only | FC-level decode |
+| Detection | Static signatures | Behavioral ML |
+| Scanning risk | Active probing | Passive SPAN |
+| Alerts | Generic | Plain-English + fix |
 
 ---
 
-## System Architecture
+## 🧠 System Architecture
 
 ### Full Stack Flowchart
 
 ```mermaid
 flowchart TD
+PLC[PLC / RTU] --> SPAN[SPAN Mirror Port]
+SCADA[SCADA] --> SPAN
+HMI[HMI] --> SPAN
+SENSOR[Sensors] --> SPAN
 
-    PLC["PLC and RTU\nModbus TCP - DNP3"]
-    SCADA["SCADA Server\nOPC-UA - Historian"]
-    HMI["HMI Station\nOPC-UA - VNC"]
-    SENSOR["Field Sensors\nModbus RTU"]
-    SPAN["OT Switch\nSPAN Port Mirror"]
+SPAN --> SCAPY[Scapy Sniffer]
 
-    SCAPY["Scapy\nRaw Socket Sniffer"]
-    PYMOD["pyModbus\nFC Decoder"]
-    ASYNCUA["asyncua\nOPC-UA Parser"]
-    DNP3["DNP3 Decoder\nSerial and TCP"]
-    PCAP["PCAP Writer\nEvidence Store"]
+SCAPY --> MODBUS[Modbus Decoder]
+SCAPY --> OPCUA[OPC-UA Parser]
+SCAPY --> DNP3[DNP3 Decoder]
 
-    REDIS["Redis 7 Streams\nPub Sub"]
-    EV["ot events stream\nRaw decoded events"]
-    AN["ot anomalies stream\nML scored events"]
-    DLQ["Dead Letter Queue\nFailed events"]
+MODBUS --> REDIS
+OPCUA --> REDIS
+DNP3 --> REDIS
 
-    ISO["Isolation Forest\nsklearn - Point anomaly\nUnsupervised"]
-    LSTM["LSTM Autoencoder\nPyTorch - Sequence\nReplay attacks"]
-    BASE["Baseline Store\n30-day per-device\nfeature profile"]
-    SHAP["SHAP Explainer\nFeature importance\nGlass-box ML"]
-    MITRE["MITRE Mapper\nATTandCK for ICS\nKill chain tag"]
+REDIS --> ML[ML Engine]
 
-    FAST["FastAPI\nREST and WebSocket\nUvicorn ASGI"]
-    ALERT["Alert Engine\nTriage - dedup\nSeverity rank"]
-    RULE["Rule Manager\nCustom OT rules\nWhitelist manager"]
-    INTEL["Threat Intel\nCISA ICS-CERT\nSTIX2 TAXII"]
-
-    TS[("TimescaleDB\nPostgreSQL Hypertables")]
-    T1["ot packets\nAll decoded packets"]
-    T2["ot alerts\nImmutable audit log"]
-    T3["device registry\nWhitelist - baselines"]
-    T4["ml baselines\n30-day feature profile"]
-
-    REACT["React 18 and Vite 7\nSPA JavaScript"]
-    D3["D3.js\nTopology - Heatmap\nForce graph"]
-    RC["Recharts\nArea - Bar - Radar\nSVG charts"]
-    WS["WebSocket Hook\nLive alerts"]
-    TW["Tailwind CSS\nUtility-first styling"]
-    NGX["Nginx\nStatic serve - Proxy"]
-
-    SPAN -->|SPAN mirror zero packets sent| SCAPY
-    SCAPY --> PYMOD
-    SCAPY --> ASYNCUA
-    SCAPY --> DNP3
-    PYMOD --> PCAP
-    ASYNCUA --> PCAP
-    DNP3 --> PCAP
-
-    PYMOD -->|JSON events| EV
-    ASYNCUA -->|JSON events| EV
-    DNP3 -->|JSON events| EV
-    EV --> REDIS
-    AN --> REDIS
-
-    REDIS -->|consume stream| ISO
-    REDIS -->|consume stream| LSTM
-    ISO --> BASE
-    LSTM --> BASE
-    ISO --> SHAP
-    LSTM --> SHAP
-    SHAP --> MITRE
-    MITRE -->|scored and MITRE tagged| AN
-
-    AN -->|alerts| ALERT
-    EV -->|all events| FAST
-    ALERT --> RULE
-    ALERT --> INTEL
-    FAST --> TS
-    TS --- T1
-    TS --- T2
-    TS --- T3
-    TS --- T4
-
-    FAST -->|WebSocket live alerts| WS
-    FAST -->|REST API history and devices| REACT
-    WS --> REACT
-    REACT --> D3
-    REACT --> RC
-    REACT --> TW
-
-    style PLC fill:#1a0800,stroke:#ff8c42,color:#ffaa60
-    style SCADA fill:#1a0800,stroke:#ff8c42,color:#ffaa60
-    style HMI fill:#1a0800,stroke:#ff8c42,color:#ffaa60
-    style SENSOR fill:#1a0800,stroke:#ff8c42,color:#ffaa60
-    style SPAN fill:#1a0800,stroke:#ff8c42,color:#ffaa60
-
-    style SCAPY fill:#001520,stroke:#00ccff,color:#80eeff
-    style PYMOD fill:#001520,stroke:#00ccff,color:#80eeff
-    style ASYNCUA fill:#001520,stroke:#00ccff,color:#80eeff
-    style DNP3 fill:#001520,stroke:#00ccff,color:#80eeff
-    style PCAP fill:#001520,stroke:#00ccff,color:#80eeff
-
-    style REDIS fill:#1a1200,stroke:#ffd166,color:#ffe599
-    style EV fill:#1a1200,stroke:#ffd166,color:#ffe599
-    style AN fill:#1a1200,stroke:#ffd166,color:#ffe599
-    style DLQ fill:#1a1200,stroke:#ffd166,color:#ffe599
-
-    style ISO fill:#12002a,stroke:#b060ff,color:#d4a0ff
-    style LSTM fill:#12002a,stroke:#b060ff,color:#d4a0ff
-    style BASE fill:#12002a,stroke:#b060ff,color:#d4a0ff
-    style SHAP fill:#12002a,stroke:#b060ff,color:#d4a0ff
-    style MITRE fill:#12002a,stroke:#b060ff,color:#d4a0ff
-
-    style FAST fill:#001a0a,stroke:#00e878,color:#80ffb8
-    style ALERT fill:#001a0a,stroke:#00e878,color:#80ffb8
-    style RULE fill:#001a0a,stroke:#00e878,color:#80ffb8
-    style INTEL fill:#001a0a,stroke:#00e878,color:#80ffb8
-
-    style TS fill:#1a0a00,stroke:#ff8c42,color:#ffcc80
-    style T1 fill:#1a0a00,stroke:#ff8c42,color:#ffcc80
-    style T2 fill:#1a0a00,stroke:#ff8c42,color:#ffcc80
-    style T3 fill:#1a0a00,stroke:#ff8c42,color:#ffcc80
-    style T4 fill:#1a0a00,stroke:#ff8c42,color:#ffcc80
-
-    style REACT fill:#001830,stroke:#00ccff,color:#80eeff
-    style D3 fill:#001830,stroke:#00ccff,color:#80eeff
-    style RC fill:#001830,stroke:#00ccff,color:#80eeff
-    style WS fill:#001830,stroke:#00ccff,color:#80eeff
-    style TW fill:#001830,stroke:#00ccff,color:#80eeff
-    style NGX fill:#001830,stroke:#00ccff,color:#80eeff
-```
-
----
-
-### Data Flow Sequence
-
-```mermaid
+ML --> API[FastAPI Backend]
+API --> DB[(TimescaleDB)]
+API --> UI[React Dashboard]
 sequenceDiagram
-    participant OT as OT Network
-    participant CAP as Capture Engine
-    participant REDIS as Redis Streams
-    participant ML as ML Engine
-    participant API as FastAPI
-    participant DB as TimescaleDB
-    participant UI as React Dashboard
+participant OT as OT Network
+participant CAP as Capture Engine
+participant ML as ML Engine
+participant API as FastAPI
+participant UI as Dashboard
 
-    OT->>CAP: Raw packets via SPAN mirror read-only
-    CAP->>CAP: Decode Modbus FC and OPC-UA and DNP3
-    CAP->>REDIS: Publish decoded event JSON
-    CAP->>DB: Write raw packet log
-    REDIS->>ML: Consume ot events stream
-    ML->>ML: Run Isolation Forest point anomaly
-    ML->>ML: Run LSTM sequence pattern
-    ML->>ML: SHAP explain and MITRE tag
-    ML->>REDIS: Publish scored anomaly to ot anomalies
-    REDIS->>API: Consume ot anomalies stream
-    API->>DB: Persist alert immutable audit log
-    API->>UI: WebSocket push under 100ms latency
-    UI->>API: REST GET /devices
-    UI->>API: REST GET /alerts/history
-    UI->>UI: Render topology map and charts
-```
-
----
-
-## Tech Stack
-
-### Frontend
-
-| Technology | Version | Role | Why This |
-|---|---|---|---|
-| React | 18 | UI framework | Component model maps to dashboard panels. Largest D3 and charting ecosystem. Hooks handle WebSocket state cleanly. |
-| Vite | 7 | Build tool | Sub-second HMR for fast dev iteration. Native ESM. No webpack config overhead. |
-| D3.js | 7 | Topology map, heatmap, Gantt | Only library with force-directed graph simulation. Recharts cannot do graph layouts. |
-| Recharts | 2 | Area, bar, radar, scatter charts | React-native SVG charts. Declarative API works perfectly with React state. |
-| Tailwind CSS | 3 | Styling | Utility classes eliminate context-switching. No separate CSS files to maintain. |
-| WebSocket native | — | Live alert streaming | Native browser API. Connects to FastAPI for under 100ms alert delivery. |
-
-### Backend
-
-| Technology | Version | Role | Why This |
-|---|---|---|---|
-| FastAPI | 0.110+ | REST API and WebSocket server | Async WebSocket broadcasting. Auto OpenAPI docs. 3x faster than Flask. |
-| Uvicorn | latest | ASGI server | Production-grade async server. Required for FastAPI WebSocket support. |
-| Scapy | 2.5+ | Raw packet capture | Only Python library with full raw socket access and custom protocol dissection. |
-| pyModbus | 3.x | Modbus TCP/RTU parsing | Decodes at function-code level. FC-05 and FC-16 decoded with register addresses. |
-| asyncua | latest | OPC-UA decoding | Full OPC-UA node decode including NodeId, browse names, data values. |
-| Redis | 7 | Message bus | Decouples capture to ML to API. Consumer groups let each service consume independently. |
-
-### Database
-
-| Technology | Role | Why This |
-|---|---|---|
-| TimescaleDB | Primary data store | PostgreSQL plus time-series hypertables. Auto-partitions by time. 90% compression. Full SQL for complex joins. |
-| ot_packets | All decoded packets | Source IP, dest IP, protocol, function code, timestamp, anomaly score |
-| ot_alerts | Immutable alert log | Severity, MITRE code, SHAP features, PCAP reference, operator actions |
-| device_registry | Asset whitelist | Device name, IP, MAC, protocol, Purdue level, baseline profile reference |
-| ml_baselines | Per-device 30-day profile | Polling rate, write ratio, active hours, peer count |
-
----
-
-## ML Models
-
-| Model | Library | Detects | Why This Model |
-|---|---|---|---|
-| Isolation Forest | scikit-learn | Point anomalies — single events that deviate from device baseline | Unsupervised — needs zero labeled attack data. Runs inference in under 5ms. |
-| LSTM Autoencoder | PyTorch | Sequence anomalies — abnormal command patterns over time, replay attacks | Learns temporal sequences. Reconstruction error equals anomaly score. |
-| SHAP Explainer | shap | Explains WHY the model flagged an event | Makes ML glass-box not black-box. Shows which feature drove the anomaly score. |
-| Baseline Store | TimescaleDB and NumPy | Per-device 30-day rolling behavioral profile | Each device gets its own mean and sigma for 8 features. |
-
----
-
-## API Reference
-
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | /api/devices | All devices in registry with current status |
-| GET | /api/devices/{id} | Single device detail and behavior profile |
-| GET | /api/alerts | Alert history last 24h paginated |
-| GET | /api/alerts/{id} | Single alert with PCAP ref and SHAP breakdown |
-| GET | /api/traffic | Rolling 60s traffic telemetry |
-| GET | /api/topology | Network graph nodes and edges |
-| GET | /api/fc-distribution | Modbus function code counts 24h |
-| POST | /api/devices/{id}/whitelist | Add device to whitelist |
-| POST | /api/rules | Create custom detection rule |
-| DELETE | /api/alerts/{id}/suppress | Suppress a false positive with reason |
-| WS | /ws/alerts | Live alert WebSocket stream |
-| WS | /ws/traffic | Live traffic telemetry WebSocket |
-
----
-
-## Dashboard Features
-
-| Section | What It Shows | Why It Is There |
-|---|---|---|
-| Header Bar | Threat level GREEN/AMBER/RED/BLACK, system health, live packet counter, clock | 3-second health check for operators. Single color means no reading needed. |
-| KPI Strip | Active threats, devices online, packets/sec, anomaly score, protocol violations | Answers every top-level question before reading anything else. |
-| Network Topology Map | Force-directed graph of all devices. Red dashed lines = active attack paths. | Makes threats spatial. Operator understands the threat without reading an IP address. |
-| Traffic Anomaly Timeline | Dual area chart — blue baseline vs red anomaly spikes rolling 60s | Baseline band makes deviation visually obvious. Red spike means act now. |
-| Device Registry | Scrollable device list with status dots, anomaly scores, whitelist status | Every investigation starts with what should this device normally be doing. |
-| Alert Feed | Expandable alert cards with severity, MITRE code, physical risk, and fix steps | Plain English context turns a number into an action. |
-| FC Risk Matrix | Modbus function code table with risk level and 24h counts vs baseline | FC-16 spike at 2am with zero baseline equals Triton pattern. |
-| ML Explainer | SHAP feature table per alert showing which dimension caused the anomaly | Operator trust requires explanation. A score means nothing. 800 writes/min vs baseline 12/min means everything. |
-
----
-
-## Getting Started
-
-### Prerequisites
-
-```
-Node.js >= 18
-Python >= 3.11
-PostgreSQL >= 15 with TimescaleDB extension
-Redis >= 7
-```
-
-### Frontend Setup
-
-```bash
-cd my-app
-npm install
-npm install recharts d3
-npm run dev
-```
-
-Runs at http://localhost:5173
-
-### Backend Setup
-
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install fastapi uvicorn scapy pymodbus asyncua redis scikit-learn torch shap
-uvicorn main:app --reload --port 8000
-```
-
-### Database Setup
-
-```bash
-psql -U postgres -c "CREATE EXTENSION IF NOT EXISTS timescaledb;"
-psql -U postgres -f schema.sql
-```
-
-### Environment Variables
-
-Create a `.env` file in the backend root:
-
-```
-DATABASE_URL=postgresql://postgres:password@localhost:5432/suraksha
-REDIS_URL=redis://localhost:6379
-OT_INTERFACE=eth0
-SPAN_PORT=502
-ML_THRESHOLD=0.65
-```
-
----
-
-## Project Structure
-
-```
-Suraksha/
-├── my-app/                          # Frontend React + Vite
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── TopologyMap.jsx
-│   │   │   ├── TrafficChart.jsx
-│   │   │   ├── AlertFeed.jsx
-│   │   │   ├── DeviceRegistry.jsx
-│   │   │   ├── FCMatrix.jsx
-│   │   │   └── MLExplainer.jsx
-│   │   ├── hooks/
-│   │   │   ├── useWebSocket.js
-│   │   │   └── useTraffic.js
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── package.json
-│   └── vite.config.js
-│
-├── backend/                         # Backend FastAPI + Python
-│   ├── capture/
-│   │   ├── sniffer.py
-│   │   ├── modbus_parser.py
-│   │   ├── opcua_parser.py
-│   │   └── dnp3_parser.py
-│   ├── ml/
-│   │   ├── isolation_forest.py
-│   │   ├── lstm_autoencoder.py
-│   │   ├── baseline.py
-│   │   └── explainer.py
-│   ├── api/
-│   │   ├── main.py
-│   │   ├── routes/
-│   │   │   ├── devices.py
-│   │   │   ├── alerts.py
-│   │   │   └── traffic.py
-│   │   └── models.py
-│   ├── db/
-│   │   ├── schema.sql
-│   │   └── queries.py
-│   └── requirements.txt
-│
-├── README.md
-└── .env.example
-```
-
----
-
-## Graphical Analysis
-
-### Phase 1 — Required Charts
-
-| Chart | Library | What It Shows |
-|---|---|---|
-| Network Topology Map | D3.js force simulation | All devices as nodes, communication as edges, attack paths in red |
-| Traffic Anomaly Timeline | Recharts AreaChart | Baseline traffic vs ML-flagged anomaly spikes |
-| Device Comm Heatmap | D3.js matrix | Which devices talk to which, colored by anomaly score |
-| Modbus FC Bar Chart | Recharts BarChart | Function code counts vs baseline, colored by risk level |
-| Device Behavior Radar | Recharts RadarChart | Current behavior vs 30-day baseline as two overlaid polygons |
-
-### Phase 2 — Add After Core Is Stable
-
-| Chart | Library | What It Shows |
-|---|---|---|
-| ML Anomaly Scatter | Recharts ScatterChart | Each device as dot: X=volume, Y=anomaly score |
-| Attack Kill Chain Funnel | Recharts BarChart | MITRE stage progression — how far into the attack lifecycle |
-
-### Phase 3 — Advanced
-
-| Chart | Library | What It Shows |
-|---|---|---|
-| Incident Correlation Gantt | D3.js swimlane | Multi-device attack campaigns across time |
-| Protocol Flow Sankey | d3-sankey | Source to protocol to destination with link width = traffic volume |
-
----
-
-## Security Design Principles
-
-1. **Zero active scanning** — IDS never sends packets to the OT network. SPAN port = read-only mirror.
-2. **Unprivileged sensor process** — Capture runs with CAP_NET_RAW Linux capability only, not root.
-3. **Immutable audit log** — Alerts in TimescaleDB are append-only. No deletions allowed.
-4. **Passive ML inference** — Models score events off the critical capture path via Redis. Capture never blocks.
-5. **PCAP evidence chain** — Every alert captures raw packets for forensic use.
-
----
-
-## References
-
-- [MITRE ATT&CK for ICS](https://attack.mitre.org/matrices/ics/)
-- [CISA ICS-CERT Advisories](https://www.cisa.gov/ics-cert)
-- [IEC 62443 Industrial Cybersecurity Standard](https://www.iec.ch/homepage)
-- [NIST SP 800-82 Guide to ICS Security](https://csrc.nist.gov/publications/detail/sp/800-82/rev-3/final)
-- [Modbus Protocol Specification](https://modbus.org/specs.php)
-
----
-
-## License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
-<div align="center">
-  <strong>Suraksha</strong> — Protecting Industrial Networks, One Packet at a Time.
-</div>
- 
+OT->>CAP: SPAN mirrored packets
+CAP->>CAP: Decode Modbus/OPC-UA/DNP3
+CAP->>ML: Send structured events
+ML->>API: Send anomalies
+API->>UI: WebSocket alerts
+UI->>UI: Visualize
